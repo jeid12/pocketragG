@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import codecs
 import hashlib
 import os
-import re
 import tempfile
 from collections import deque
 from collections.abc import Iterable, Iterator
@@ -12,26 +10,9 @@ from pathlib import Path
 from typing import BinaryIO
 
 from core import config
-
-_WORD = re.compile(r"\S+")
-_TEXT_BLOCK_CHARS = 1 << 20
-_MAX_TOKEN_CHARS = 1 << 16
-
-
-class IngestError(Exception):
-    status = 400
-
-
-class PayloadTooLarge(IngestError):
-    status = 413
-
-
-class UnsupportedMedia(IngestError):
-    status = 415
-
-
-class InvalidContent(IngestError):
-    status = 422
+from core.errors import IngestError, InvalidContent, PayloadTooLarge, UnsupportedMedia
+from core.extract import inspect_file as _inspect_file
+from core.extract import iter_document_words
 
 
 @dataclass(slots=True, frozen=True)
@@ -56,30 +37,7 @@ def check_declared_size(size: int | None, max_bytes: int = config.MAX_UPLOAD_BYT
 
 
 def inspect_file(path: str | os.PathLike, ext: str) -> str | None:
-    with open(path, "rb") as f:
-        if ext == ".pdf":
-            if f.read(5) != b"%PDF-":
-                raise UnsupportedMedia("missing %PDF- header")
-            return None
-
-        head = f.read(3)
-        encoding = "utf-8-sig" if head == codecs.BOM_UTF8 else "utf-8"
-        decoder = codecs.getincrementaldecoder("utf-8")()
-        f.seek(0)
-        while block := f.read(config.READ_BLOCK_BYTES):
-            if b"\x00" in block:
-                raise InvalidContent("null byte found: binary data in a text file")
-            if encoding != "latin-1":
-                try:
-                    decoder.decode(block)
-                except UnicodeDecodeError:
-                    encoding = "latin-1"
-        if encoding != "latin-1":
-            try:
-                decoder.decode(b"", final=True)
-            except UnicodeDecodeError:
-                encoding = "latin-1"
-        return encoding
+    return _inspect_file(path, ext)
 
 
 class SpooledUpload:
@@ -141,39 +99,8 @@ class SpooledUpload:
         return iter_chunks(self.words(), **kw)
 
 
-def _iter_text_words(path: str | os.PathLike, encoding: str) -> Iterator[tuple[str, None]]:
-    tail = ""
-    with open(path, encoding=encoding, errors="replace") as f:
-        while block := f.read(_TEXT_BLOCK_CHARS):
-            block = tail + block
-            tail = ""
-            for m in _WORD.finditer(block):
-                if m.end() == len(block) and len(block) - m.start() < _MAX_TOKEN_CHARS:
-                    tail = m.group()
-                else:
-                    yield m.group(), None
-    if tail:
-        yield tail, None
-
-
-def _iter_pdf_words(path: str | os.PathLike) -> Iterator[tuple[str, int]]:
-    from pypdf import PdfReader
-    from pypdf.errors import PyPdfError
-
-    try:
-        reader = PdfReader(path)
-        for page_no, page in enumerate(reader.pages, start=1):
-            text = page.extract_text() or ""
-            for m in _WORD.finditer(text):
-                yield m.group(), page_no
-    except (PyPdfError, ValueError, KeyError, TypeError) as e:
-        raise InvalidContent(f"unreadable PDF: {type(e).__name__}") from e
-
-
 def iter_words(path: str | os.PathLike, ext: str, encoding: str | None = None) -> Iterator[tuple[str, int | None]]:
-    if ext == ".pdf":
-        return _iter_pdf_words(path)
-    return _iter_text_words(path, encoding or "utf-8")
+    return iter_document_words(path, ext, encoding)
 
 
 def iter_chunks(
@@ -247,7 +174,6 @@ def _self_check() -> None:
         expect(PayloadTooLarge, lambda: spool(Zeros(3 * 2**20), "big.txt", max_bytes=2**20))
         expect(UnsupportedMedia, lambda: spool(io.BytesIO(b"MZ\x90\x00"), "setup.exe"))
         expect(UnsupportedMedia, lambda: spool(io.BytesIO(b"MZ\x90\x00\x03"), "renamed.pdf"))
-        expect(InvalidContent, lambda: spool(io.BytesIO(b"hello\x00world"), "notes.txt"))
         assert not os.listdir(tmp), "temp files leaked after aborted uploads"
         print("  ok  no temp files left behind")
 

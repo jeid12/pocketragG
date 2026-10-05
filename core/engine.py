@@ -15,6 +15,7 @@ import numpy as np
 from core import config
 from core.bm25 import BM25Index
 from core.dense import DenseIndex, Embedder
+from core.ingest import Chunk
 from core.fusion import rrf
 from core.svd_map import SpectralMap
 
@@ -97,6 +98,13 @@ class Engine:
                  "svd": self.svd.to_dict() if self.svd else None}
         (self.dir / "meta.json").write_text(json.dumps(state))
 
+    def _doc_chunks(self, doc: dict) -> list[Chunk]:
+        chunks = []
+        for chunk_id in range(doc["first_chunk"], doc["first_chunk"] + doc["n_chunks"]):
+            record = self.chunk(chunk_id)
+            chunks.append(Chunk(0, record["text"], record["start_word"], record["end_word"], record.get("page")))
+        return chunks
+
     def reset(self) -> None:
         with self.lock:
             self.dense.clear()
@@ -107,6 +115,18 @@ class Engine:
             self.docs = []
             for name in ("bm25.pkl", "meta.json"):
                 (self.dir / name).unlink(missing_ok=True)
+
+    def delete_doc(self, sha256: str) -> dict:
+        with self.lock:
+            removed = next((doc for doc in self.docs if doc["sha256"] == sha256), None)
+            if removed is None:
+                raise KeyError(f"document {sha256} not found")
+            survivors = [doc for doc in self.docs if doc["sha256"] != sha256]
+            retained = [(doc["name"], doc["sha256"], doc["bytes"], self._doc_chunks(doc)) for doc in survivors]
+            self.reset()
+            for name, sha, size, chunks in retained:
+                self._ingest(name, iter(chunks), sha, size)
+            return {"ok": True, "deleted": removed["name"], "sha256": sha256, "remaining_docs": len(self.docs)}
 
     def chunk(self, chunk_id: int) -> dict:
         with open(self.chunks_path, "rb") as f:

@@ -15,7 +15,7 @@ open, the risks, and the day-by-day checklist with a concrete "done" test for ea
 | D4 | Centre D before the SVD? | **No** (the spec uses raw D). If the plot looks like one blob, try mean-centring (which turns it into PCA) and compare. | The first singular vector of uncentred unit vectors is usually the corpus "mean direction". |
 | D5 | Where to store the dense matrix | `np.memmap` float32 file under `data/index/`, scored in blocks of 8192 rows with a running top-k merge. | See risk R1. |
 | D6 | Tokeniser for BM25 | Lowercase, `re.finditer(r"\w+")`, no stemming, and a small stop-word list. Keep technical tokens like `x86_64` whole. | The spec says BM25 exists "to resolve precise technical identifiers". |
-| D7 | How the Claude API is called | Official `anthropic` SDK (or raw `requests`, as the spec lists), model set by the `CLAUDE_MODEL` env var. Prompt: "answer ONLY from these numbered passages; cite [n]; else say not found". | Presentation-layer isolation invariant. |
+| D7 | How the LLM API is called | Gemini API over `requests`, model set by the `GEMINI_MODEL` env var and authenticated by `GEMINI_API_KEY`. Prompt: "answer ONLY from these numbered passages; cite [n]; else say not found". | Presentation-layer isolation invariant. |
 | D8 | State between requests | One in-process index per server (single-user demo). Persist to `data/index/` so a restart doesn't re-embed. | Keeps scope within 20 h. |
 
 ## 1. Risks (read before Day 1)

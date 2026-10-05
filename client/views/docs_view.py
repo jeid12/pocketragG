@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import flet as ft
 
-from api import ApiError
+from api import DEFAULT_BACKEND, ApiError
 
 
 def stat_tile(label: str, value: str) -> ft.Container:
@@ -18,8 +18,9 @@ class DocsView(ft.Column):
         super().__init__(scroll=ft.ScrollMode.AUTO, spacing=14)
         self.app = app
         self.cursor = 0
-        self.backend = ft.TextField(label="Backend URL", value=app.api.base, dense=True, expand=True,
-                                    on_submit=self.on_connect)
+        self.backend = ft.TextField(label="Backend URL", value=app.api.base or DEFAULT_BACKEND,
+                                    hint_text=DEFAULT_BACKEND,
+                                    dense=True, expand=True, on_submit=self.on_connect)
         self.status = ft.Text("", size=12)
         self.progress = ft.ProgressBar(visible=False)
         self.stats_row = ft.Row(spacing=8)
@@ -34,7 +35,8 @@ class DocsView(ft.Column):
             ft.Row([self.upload_btn,
                     ft.OutlinedButton("Clear index", icon=ft.Icons.DELETE_OUTLINE, on_click=self.on_reset)],
                    wrap=True),
-            ft.Text("PDF, TXT or MD, up to 500 MB. Chunks are 150 words with a 30-word overlap.",
+            ft.Text("PDF, Office, images (OCR), text and markup — up to 500 MB. "
+                    "150-word chunks, 30-word overlap.",
                     size=12, color=ft.Colors.ON_SURFACE_VARIANT),
             self.progress,
             self.stats_row,
@@ -45,10 +47,25 @@ class DocsView(ft.Column):
         ]
 
     async def on_connect(self, e=None):
-        await self.app.set_backend(self.backend.value)
+        backend = (self.backend.value or "").strip()
+        if not backend:
+            self.status.value = "Enter the laptop backend URL, for example http://192.168.1.20:8550"
+            self.status.color = ft.Colors.ERROR
+            self.update()
+            return
+        await self.app.set_backend(backend)
         await self.refresh()
 
     async def refresh(self):
+        if not self.app.api.base:
+            self.status.value = "Set the backend URL to connect to your laptop backend."
+            self.status.color = ft.Colors.ON_SURFACE_VARIANT
+            self.stats_row.controls = []
+            self.docs_list.controls = []
+            self.chunk_list.controls = []
+            self.more.visible = False
+            self.update()
+            return
         try:
             s = await self.app.api.stats()
         except ApiError as err:
@@ -65,9 +82,17 @@ class DocsView(ft.Column):
             stat_tile("2D η", f"{s['eta']:.1%}"),
         ]
         self.docs_list.controls = [
-            ft.ListTile(leading=ft.Icon(ft.Icons.DESCRIPTION), title=ft.Text(d["name"]),
-                        subtitle=ft.Text(f"{d['n_chunks']:,} chunks · {d['bytes'] / 2**20:.1f} MB · "
-                                         f"indexed in {d['seconds']}s"), dense=True)
+            ft.ListTile(
+                leading=ft.Icon(ft.Icons.DESCRIPTION),
+                title=ft.Text(d["name"]),
+                subtitle=ft.Text(f"{d['n_chunks']:,} chunks · {d['bytes'] / 2**20:.1f} MB · indexed in {d['seconds']}s"),
+                trailing=ft.IconButton(
+                    ft.Icons.DELETE_OUTLINE,
+                    tooltip="Delete document",
+                    on_click=lambda e, sha=d["sha256"], name=d["name"]: self.on_delete_doc(sha, name),
+                ),
+                dense=True,
+            )
             for d in s["docs"]
         ]
         self.cursor = 0
@@ -92,7 +117,7 @@ class DocsView(ft.Column):
 
     async def on_upload(self, e):
         files = await self.app.file_picker.pick_files(
-            dialog_title="Choose a document", allowed_extensions=["pdf", "txt", "md"],
+            dialog_title="Choose a document", file_type=ft.FilePickerFileType.ANY,
             with_data=self.app.page.web)
         if not files:
             return
@@ -121,6 +146,14 @@ class DocsView(ft.Column):
         try:
             await self.app.api.reset()
             self.app.toast("Index cleared")
+        except ApiError as err:
+            self.app.toast(str(err))
+        await self.refresh()
+
+    async def on_delete_doc(self, sha256: str, name: str):
+        try:
+            await self.app.api.delete_doc(sha256)
+            self.app.toast(f"Deleted {name}")
         except ApiError as err:
             self.app.toast(str(err))
         await self.refresh()

@@ -61,6 +61,7 @@ class ChatView(ft.Column):
         try:
             r = await self.app.api.query(q)
             self.feed.controls[-1] = self.answer_card(q, r)
+            self.app.add_history(q, r)
         except ApiError as err:
             self.feed.controls[-1] = ft.Text(str(err), color=ft.Colors.ERROR)
         self.send_btn.disabled = False
@@ -69,7 +70,9 @@ class ChatView(ft.Column):
     def answer_card(self, q: str, r: dict) -> ft.Control:
         if not r["passages"]:
             return ft.Text("No documents indexed yet. Upload one in the Docs tab.", color=ft.Colors.ERROR)
-        if r["mode"] == "claude":
+        if r["mode"] == "gemini":
+            badge, color = f"Gemini · {r.get('model', '')}", ft.Colors.GREEN
+        elif r["mode"] == "claude":
             badge, color = f"Claude · {r.get('model', '')}", ft.Colors.GREEN
         else:
             badge, color = "Extractive", ft.Colors.AMBER
@@ -84,6 +87,4 @@ class ChatView(ft.Column):
         body.append(ft.ExpansionTile(
             title=ft.Text(f"{len(r['passages'])} verified source passages", size=13),
             controls=[passage_card(p) for p in r["passages"]], controls_padding=8))
-        body.append(ft.TextButton("Show on the map", icon=ft.Icons.SCATTER_PLOT,
-                                  on_click=lambda e: self.app.page.run_task(self.app.show_on_map, q)))
         return ft.Card(content=ft.Container(padding=14, content=ft.Column(body, spacing=8)))

@@ -69,7 +69,6 @@ def test_pdf_upload_keeps_pages(client):
 @pytest.mark.parametrize("name,data,status", [
     ("x.exe", b"MZ\x90\x00", 415),
     ("x.pdf", b"not a pdf", 415),
-    ("x.txt", b"bin\x00ary", 422),
 ])
 def test_rejections(client, name, data, status):
     assert upload(client, name, data).status_code == status
@@ -85,8 +84,11 @@ def test_corrupt_pdf_is_rejected_and_index_survives(client):
 
 
 def test_duplicate_and_reset(client):
-    assert upload(client, "a.txt", b"alpha beta gamma " * 100).status_code == 200
+    first = upload(client, "a.txt", b"alpha beta gamma " * 100)
+    assert first.status_code == 200
     assert upload(client, "a.txt", b"alpha beta gamma " * 100).status_code == 409
+    deleted = client.delete(f"/documents/{first.json()['sha256']}")
+    assert deleted.status_code == 200 and deleted.json()["remaining_docs"] == 0
     assert client.post("/reset").json() == {"ok": True}
     assert client.get("/health").json()["chunks"] == 0
     assert client.post("/query", json={"q": "alpha"}).json()["passages"] == []

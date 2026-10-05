@@ -5,7 +5,7 @@ import os
 
 import requests
 
-DEFAULT_BACKEND = os.getenv("POCKETRAG_BACKEND", "http://127.0.0.1:8550")
+DEFAULT_BACKEND = os.getenv("POCKETRAG_BACKEND", "http://10.6.255.143:8550")
 
 
 class ApiError(Exception):
@@ -55,6 +55,9 @@ class Api:
 
     async def reset(self):
         return await self.call("POST", "/reset")
+
+    async def delete_doc(self, sha256: str):
+        return await self.call("DELETE", f"/documents/{sha256}")
 
     async def ingest(self, name: str, path: str | None = None, data: bytes | None = None):
         def send():

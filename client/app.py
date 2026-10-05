@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from urllib.parse import parse_qs, urlsplit
 
 import flet as ft
@@ -7,23 +8,28 @@ import flet as ft
 from api import DEFAULT_BACKEND, Api
 from views.chat_view import ChatView
 from views.docs_view import DocsView
-from views.geometry_view import GeometryView
-from views.theory_view import TheoryView
+from views.history_view import HistoryView
 
 MAX_WIDTH = 750
 PADDING = 16
 PREF_KEY = "pocketrag.backend"
-ROUTES = ["/", "/ask", "/map", "/theory"]
+ROUTES = ["/", "/ask", "/history"]
 MATH_FONT = "DejaVu"
+
+
+def _is_local_backend(url: str) -> bool:
+    url = url.strip().lower()
+    return url.startswith("http://127.0.0.1") or url.startswith("http://localhost") or url.startswith("http://0.0.0.0")
 
 
 class PocketRAG:
     def __init__(self, page: ft.Page):
         self.page = page
-        self.api = Api(DEFAULT_BACKEND)
+        self.api = Api(DEFAULT_BACKEND if page.web else "")
         self.prefs = ft.SharedPreferences()
         self.file_picker = ft.FilePicker()
-        self.views = [DocsView(self), ChatView(self), GeometryView(self), TheoryView(self)]
+        self.history: list[dict] = []
+        self.views = [DocsView(self), ChatView(self), HistoryView(self)]
         self.shell = ft.Container(content=self.views[0], width=self.shell_width(), padding=PADDING)
         self.nav = ft.NavigationBar(
             selected_index=0, on_change=self.on_nav,
@@ -31,9 +37,7 @@ class PocketRAG:
                 ft.NavigationBarDestination(icon=ft.Icons.DESCRIPTION_OUTLINED, selected_icon=ft.Icons.DESCRIPTION,
                                             label="Docs"),
                 ft.NavigationBarDestination(icon=ft.Icons.CHAT_OUTLINED, selected_icon=ft.Icons.CHAT, label="Ask"),
-                ft.NavigationBarDestination(icon=ft.Icons.SCATTER_PLOT_OUTLINED, selected_icon=ft.Icons.SCATTER_PLOT,
-                                            label="Map"),
-                ft.NavigationBarDestination(icon=ft.Icons.FUNCTIONS, label="Theory"),
+                ft.NavigationBarDestination(icon=ft.Icons.HISTORY, selected_icon=ft.Icons.HISTORY, label="History"),
             ],
         )
 
@@ -56,9 +60,12 @@ class PocketRAG:
                                     vertical_alignment=ft.CrossAxisAlignment.STRETCH), expand=True))
         try:
             saved = await self.prefs.get(PREF_KEY)
-            if saved:
-                self.api.set_base(saved)
-                self.views[0].backend.value = saved
+            backend = saved or (DEFAULT_BACKEND if page.web else "")
+            if not page.web and backend and _is_local_backend(backend):
+                backend = ""
+            if backend:
+                self.api.set_base(backend)
+                self.views[0].backend.value = backend
         except Exception:
             pass
         url = urlsplit(page.route or "/")
@@ -67,8 +74,6 @@ class PocketRAG:
         q = parse_qs(url.query).get("q", [""])[0].strip()
         if q and path == "/ask":
             await self.views[1].ask(q)
-        elif q and path == "/map":
-            await self.views[2].project(q)
 
     async def set_backend(self, url: str):
         self.api.set_base(url)
@@ -79,8 +84,6 @@ class PocketRAG:
 
     def on_resize(self, e):
         self.shell.width = self.shell_width()
-        if isinstance(self.shell.content, GeometryView):
-            self.shell.content.draw()
         self.page.update()
 
     async def select(self, index: int):
@@ -92,11 +95,17 @@ class PocketRAG:
     async def on_nav(self, e):
         await self.select(e.control.selected_index)
 
-    async def show_on_map(self, q: str):
-        self.nav.selected_index = 2
-        self.shell.content = self.views[2]
-        self.page.update()
-        await self.views[2].project(q)
+    def add_history(self, question: str, result: dict):
+        self.history.append({
+            "question": question,
+            "answer": result.get("answer", ""),
+            "mode": result.get("mode", ""),
+            "model": result.get("model", ""),
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        })
+        history_view = self.views[2]
+        if self.nav.selected_index == 2 and hasattr(history_view, "refresh"):
+            self.page.run_task(history_view.refresh)
 
     def toast(self, message: str):
         self.page.show_dialog(ft.SnackBar(ft.Text(message)))

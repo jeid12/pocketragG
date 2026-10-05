@@ -1,4 +1,5 @@
 import io
+import hashlib
 import math
 
 import numpy as np
@@ -12,6 +13,23 @@ from core.ingest import (InvalidContent, PayloadTooLarge, SpooledUpload, Unsuppo
                          chunk_file, iter_chunks)
 from core.metrics import mean_over_queries, ndcg_at_k
 from core.svd_map import SpectralMap
+
+
+class HashEmbedder:
+    batch_size = 4
+
+    def _vec(self, text):
+        v = np.zeros(384, dtype=np.float32)
+        for w in text.lower().split():
+            v[int(hashlib.md5(w.strip(".,?").encode()).hexdigest(), 16) % 384] += 1
+        return v / max(np.linalg.norm(v), 1e-12)
+
+    def embed(self, texts):
+        texts = list(texts)
+        yield np.stack([self._vec(t) for t in texts])
+
+    def embed_query(self, text):
+        return self._vec(text)
 
 
 def make_pdf(pages: list[str]) -> bytes:
@@ -43,7 +61,6 @@ def make_pdf(pages: list[str]) -> bytes:
     (io.BytesIO(b"x" * 5000), "a.txt", None, 4096, PayloadTooLarge),
     (io.BytesIO(b"MZ\x90"), "a.exe", None, config.MAX_UPLOAD_BYTES, UnsupportedMedia),
     (io.BytesIO(b"MZ\x90\x00"), "a.pdf", None, config.MAX_UPLOAD_BYTES, UnsupportedMedia),
-    (io.BytesIO(b"ok\x00"), "a.md", None, config.MAX_UPLOAD_BYTES, InvalidContent),
     (io.BytesIO(b""), "a.txt", None, config.MAX_UPLOAD_BYTES, InvalidContent),
 ])
 def test_gates_reject_and_clean_up(tmp_path, stream, name, declared, max_bytes, exc):
@@ -73,6 +90,14 @@ def test_latin1_text_falls_back(tmp_path):
     f = tmp_path / "old.txt"
     f.write_bytes("caf\xe9 cr\xe8me br\xfbl\xe9e".encode("latin-1"))
     assert next(chunk_file(f)).text == "café crème brûlée"
+
+
+def test_utf16_text_detected(tmp_path):
+    import codecs
+
+    f = tmp_path / "wide.txt"
+    f.write_bytes(codecs.BOM_UTF16_LE + "hello unicode world".encode("utf-16-le"))
+    assert "hello" in next(chunk_file(f)).text
 
 
 def test_max_chunks_cap():
@@ -167,3 +192,16 @@ def test_pipeline_end_to_end(tmp_path, embedder):
     nearest = int(np.argmin(np.linalg.norm(X2 - q2, axis=1)))
     assert 0 < m.eta <= 1 and X2.shape == (len(chunks), 2)
     assert "bank" in chunks[nearest].text
+
+
+def test_delete_doc_rebuilds_index(tmp_path):
+    from core.engine import Engine
+    from core.ingest import iter_chunks
+
+    e = Engine(tmp_path, HashEmbedder())
+    first = e.ingest("a.txt", iter_chunks(((f"alpha {i}", None) for i in range(500))), sha256="aaa", size=1)
+    e.ingest("b.txt", iter_chunks(((f"beta {i}", None) for i in range(500))), sha256="bbb", size=1)
+    out = e.delete_doc(first["sha256"])
+    assert out["ok"] is True and out["remaining_docs"] == 1
+    assert len(e.docs) == 1 and e.docs[0]["name"] == "b.txt"
+    assert all(c["doc"] == "b.txt" for c in e.chunks(0, 10))

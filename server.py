@@ -99,6 +99,14 @@ def reset() -> dict:
     return {"ok": True}
 
 
+@app.delete("/documents/{sha256}")
+def delete_document(sha256: str) -> dict:
+    try:
+        return engine.delete_doc(sha256)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
 

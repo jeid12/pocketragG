@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Sequence
 
-import anthropic
+import requests
 
 from core import config
 from core.bm25 import tokenize
@@ -21,14 +22,6 @@ SYSTEM = (
 
 _CITE = re.compile(r"\[(\d+)\]")
 _SENTENCE = re.compile(r"(?<=[.!?;])\s+")
-_client: anthropic.Anthropic | None = None
-
-
-def _get_client() -> anthropic.Anthropic:
-    global _client
-    if _client is None:
-        _client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY) if config.ANTHROPIC_API_KEY else anthropic.Anthropic()
-    return _client
 
 
 def build_prompt(question: str, passages: Sequence[str]) -> str:
@@ -66,38 +59,70 @@ def extractive(question: str, passages: Sequence[str], reason: str) -> dict:
     return {"answer": "\n".join(lines), "mode": "extractive", "reason": reason, "citations": cites}
 
 
-def synthesize(question: str, passages: Sequence[str]) -> dict:
-    if not passages:
-        return extractive(question, passages, "no passages retrieved")
-    try:
-        response = _get_client().beta.messages.create(
-            model=config.CLAUDE_MODEL,
-            max_tokens=16000,
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-            output_config={"effort": "low"},
-            system=SYSTEM,
-            messages=[{"role": "user", "content": build_prompt(question, passages)}],
-        )
-    except anthropic.AuthenticationError:
-        return extractive(question, passages, "no valid Anthropic credentials")
-    except anthropic.RateLimitError:
-        return extractive(question, passages, "Claude API rate limited")
-    except anthropic.APIStatusError as e:
-        detail = e.body.get("error", {}).get("message", "") if isinstance(e.body, dict) else ""
-        return extractive(question, passages, f"Claude API error {e.status_code}: {detail[:160]}".rstrip(": "))
-    except anthropic.APIConnectionError:
-        return extractive(question, passages, "Claude API unreachable")
-    except Exception as e:
-        return extractive(question, passages, f"Claude unavailable: {type(e).__name__}")
+def _gemini_error_message(payload: dict | None, status_code: int) -> str:
+    detail = ""
+    if isinstance(payload, dict):
+        error = payload.get("error", payload)
+        if isinstance(error, dict):
+            detail = str(error.get("message", "") or error.get("status", "")).strip()
+    return f"Gemini API error {status_code}: {detail}".rstrip(": ")
 
-    if response.stop_reason == "refusal":
+
+def _gemini_answer(question: str, passages: Sequence[str]) -> dict:
+    if not config.GEMINI_API_KEY:
+        return extractive(question, passages, "no valid Gemini credentials")
+
+    url = f"{config.GEMINI_BASE_URL}/models/{config.GEMINI_MODEL}:generateContent"
+    payload = {
+        "systemInstruction": {"parts": [{"text": SYSTEM}]},
+        "contents": [{"role": "user", "parts": [{"text": build_prompt(question, passages)}]}],
+        "generationConfig": {"maxOutputTokens": 16000, "temperature": 0, "topP": 0.95},
+    }
+
+    try:
+        response = requests.post(url, params={"key": config.GEMINI_API_KEY}, json=payload, timeout=60)
+        data = response.json() if response.content else {}
+    except requests.Timeout:
+        return extractive(question, passages, "Gemini API timeout")
+    except requests.RequestException:
+        return extractive(question, passages, "Gemini API unreachable")
+    except json.JSONDecodeError:
+        return extractive(question, passages, "Gemini API returned invalid JSON")
+
+    if response.status_code in {401, 403}:
+        return extractive(question, passages, "no valid Gemini credentials")
+    if response.status_code == 429:
+        return extractive(question, passages, "Gemini API rate limited")
+    if response.status_code >= 500:
+        return extractive(question, passages, _gemini_error_message(data, response.status_code))
+    if not response.ok:
+        return extractive(question, passages, _gemini_error_message(data, response.status_code))
+
+    candidates = data.get("candidates") if isinstance(data, dict) else None
+    candidate = candidates[0] if candidates else None
+    if not isinstance(candidate, dict):
+        return extractive(question, passages, "Gemini answer missing")
+
+    finish_reason = str(candidate.get("finishReason", "")).lower()
+    if finish_reason in {"recitation", "blocked"}:
         return extractive(question, passages, "model declined")
-    answer = "".join(b.text for b in response.content if b.type == "text").strip()
+
+    content = candidate.get("content", {})
+    parts = content.get("parts", []) if isinstance(content, dict) else []
+    answer = "".join(part.get("text", "") for part in parts if isinstance(part, dict) and part.get("text")).strip()
+    if not answer:
+        return extractive(question, passages, "Gemini answer empty")
+
     valid, invalid = verify_citations(answer, len(passages))
     if invalid or (answer != NOT_FOUND and not valid):
         return extractive(question, passages, "answer failed citation check")
-    return {"answer": answer, "mode": "claude", "model": response.model, "citations": valid, "reason": ""}
+    return {"answer": answer, "mode": "gemini", "model": config.GEMINI_MODEL, "citations": valid, "reason": ""}
+
+
+def synthesize(question: str, passages: Sequence[str]) -> dict:
+    if not passages:
+        return extractive(question, passages, "no passages retrieved")
+    return _gemini_answer(question, passages)
 
 
 if __name__ == "__main__":
