@@ -1,0 +1,3 @@
+-r requirements.txt
+-r requirements-client.txt
+pytest>=8

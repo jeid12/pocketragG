@@ -1,0 +1,9 @@
+env/
+.git/
+client/
+build/
+data/
+tests/
+*.pdf
+__pycache__/
+.models/

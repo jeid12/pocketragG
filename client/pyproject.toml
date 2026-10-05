@@ -1,0 +1,27 @@
+[project]
+name = "pocketrag"
+version = "1.0.0"
+description = "PocketRAG: first-principles hybrid document retrieval"
+requires-python = ">=3.10"
+dependencies = [
+  "flet==1.0.1",
+  "requests>=2.32",
+]
+
+[tool.flet]
+org = "rw.ac.aims"
+product = "PocketRAG"
+company = "AIMS Rwanda"
+
+[tool.flet.app]
+path = "."
+module = "app"
+
+[tool.flet.android]
+split_per_abi = true
+
+[tool.flet.android.permission]
+"android.permission.INTERNET" = true
+
+[tool.flet.android.manifest_application]
+usesCleartextTraffic = "true"

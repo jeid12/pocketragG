@@ -1,0 +1,32 @@
+{
+  "corpus": "data/samples/origin_of_species.txt",
+  "source": "Charles Darwin, On the Origin of Species (Project Gutenberg #1228)",
+  "body_chunks": [13, 1297],
+  "labelling": "A chunk is relevant (grade 2) if it contains a primary phrase, grade 1 if it contains only a secondary phrase. Queries are paraphrased so they do not repeat the phrase.",
+  "queries": [
+    {"q": "Why are frogs and toads never found on remote oceanic islands?", "primary": ["frogs, toads, and newts", "Batrachians"]},
+    {"q": "Can seeds still germinate after floating in salt water for weeks?", "primary": ["sea-water"]},
+    {"q": "How could something as complex as the eye arise gradually?", "primary": ["organs of extreme perfection", "perfect and complex eye"]},
+    {"q": "How can natural selection explain sterile castes in ant colonies?", "primary": ["neuter insects", "sterile workers"]},
+    {"q": "How do honey bees construct their comb so economically?", "primary": ["hive-bee"], "secondary": ["cells of the"]},
+    {"q": "Why do we find so few transitional fossils between species?", "primary": ["imperfection of the geological record"], "secondary": ["intermediate varieties"]},
+    {"q": "What is peculiar about the finches and other birds of the Galapagos archipelago?", "primary": ["Galapagos"]},
+    {"q": "Why must populations be kept in check if every species multiplies so fast?", "primary": ["geometrical ratio", "Malthus"]},
+    {"q": "From which wild bird are all the domestic pigeon breeds descended?", "primary": ["rock-pigeon"], "secondary": ["fantail", "tumbler"]},
+    {"q": "How does competition between males for females shape their weapons and ornaments?", "primary": ["sexual selection"]},
+    {"q": "Why does one bird lay its eggs in the nests of other species?", "primary": ["cuckoo"]},
+    {"q": "Which ants raid other nests and use the captured pupae as workers?", "primary": ["slave-making"]},
+    {"q": "Why are the offspring of crosses between distinct species usually infertile?", "primary": ["sterility of hybrids"], "secondary": ["first crosses"]},
+    {"q": "Why have animals living in dark caverns lost their sight?", "primary": ["blind"]},
+    {"q": "Why are white cats with blue eyes generally deaf?", "primary": ["blue eyes"]},
+    {"q": "Why do useless vestigial organs still exist in many animals?", "primary": ["rudimentary organs"]},
+    {"q": "How did arctic plants come to live on isolated mountain summits far apart?", "primary": ["glacial period"]},
+    {"q": "Which branching metaphor describes the whole history of living things?", "primary": ["great Tree of Life"]},
+    {"q": "How can a bird adapted to climbing trees live on plains without any trees?", "primary": ["woodpecker"]},
+    {"q": "How is the float organ of fishes related to the lungs of higher animals?", "primary": ["swim-bladder"]},
+    {"q": "How are freshwater plants and animals spread so widely across the world?", "primary": ["fresh-water productions"]},
+    {"q": "Why do horses and donkeys sometimes show zebra-like bars on their legs?", "primary": ["stripes"]},
+    {"q": "What did Bory St. Vincent remark about islands?", "primary": ["Bory St. Vincent"]},
+    {"q": "Which organs let certain fishes produce electric shocks?", "primary": ["electric organs"]}
+  ]
+}

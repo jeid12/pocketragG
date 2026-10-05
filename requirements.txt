@@ -1,0 +1,8 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+numpy>=2.0
+pypdf>=5.0
+fastembed>=0.4
+anthropic>=0.40
+requests>=2.32

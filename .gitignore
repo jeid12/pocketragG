@@ -1,0 +1,15 @@
+*.pyc
+.DS_Store
+.env
+.models/
+.pytest_cache/
+__pycache__/
+build/
+client/build/
+client/storage/
+data/eval/index/
+data/eval/results.json
+data/index/*
+data/uploads/*
+env/
+!data/**/.gitkeep
