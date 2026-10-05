@@ -5,6 +5,7 @@ import os
 
 import requests
 
+LOCAL_BACKEND = "http://127.0.0.1:8550"
 DEFAULT_BACKEND = os.getenv("POCKETRAG_BACKEND", "http://10.6.255.143:8550")
 
 

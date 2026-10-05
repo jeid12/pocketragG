@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import flet as ft
 
-from api import DEFAULT_BACKEND, ApiError
+from api import DEFAULT_BACKEND, LOCAL_BACKEND, ApiError
 
 
 def stat_tile(label: str, value: str) -> ft.Container:
@@ -18,8 +18,9 @@ class DocsView(ft.Column):
         super().__init__(scroll=ft.ScrollMode.AUTO, spacing=14)
         self.app = app
         self.cursor = 0
-        self.backend = ft.TextField(label="Backend URL", value=app.api.base or DEFAULT_BACKEND,
-                                    hint_text=DEFAULT_BACKEND,
+        default_backend = DEFAULT_BACKEND if not app.page.web else LOCAL_BACKEND
+        self.backend = ft.TextField(label="Backend URL", value=app.api.base or default_backend,
+                        hint_text=default_backend,
                                     dense=True, expand=True, on_submit=self.on_connect)
         self.status = ft.Text("", size=12)
         self.progress = ft.ProgressBar(visible=False)

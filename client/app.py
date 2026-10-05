@@ -5,7 +5,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import flet as ft
 
-from api import DEFAULT_BACKEND, Api
+from api import DEFAULT_BACKEND, LOCAL_BACKEND, Api
 from views.chat_view import ChatView
 from views.docs_view import DocsView
 from views.history_view import HistoryView
@@ -22,10 +22,14 @@ def _is_local_backend(url: str) -> bool:
     return url.startswith("http://127.0.0.1") or url.startswith("http://localhost") or url.startswith("http://0.0.0.0")
 
 
+def _default_backend(page_web: bool) -> str:
+    return LOCAL_BACKEND if page_web else DEFAULT_BACKEND
+
+
 class PocketRAG:
     def __init__(self, page: ft.Page):
         self.page = page
-        self.api = Api(DEFAULT_BACKEND if page.web else "")
+        self.api = Api(_default_backend(page.web))
         self.prefs = ft.SharedPreferences()
         self.file_picker = ft.FilePicker()
         self.history: list[dict] = []
@@ -60,9 +64,11 @@ class PocketRAG:
                                     vertical_alignment=ft.CrossAxisAlignment.STRETCH), expand=True))
         try:
             saved = await self.prefs.get(PREF_KEY)
-            backend = saved or (DEFAULT_BACKEND if page.web else "")
+            backend = saved or _default_backend(page.web)
             if not page.web and backend and _is_local_backend(backend):
-                backend = ""
+                backend = DEFAULT_BACKEND
+            if page.web and not backend:
+                backend = LOCAL_BACKEND
             if backend:
                 self.api.set_base(backend)
                 self.views[0].backend.value = backend
